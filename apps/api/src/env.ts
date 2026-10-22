@@ -4,6 +4,10 @@ const EnvSchema = z.object({
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   WEB_ORIGIN: z.url().default("http://localhost:5173"),
+  /** Directory with the built web app; when set, the API serves it. */
+  WEB_DIST: z.string().min(1).optional(),
+  /** Defaults to true in production. Set to false only for plain-HTTP local runs (docker compose). */
+  COOKIE_SECURE: z.enum(["true", "false"]).optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
