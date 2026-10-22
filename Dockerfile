@@ -1,5 +1,5 @@
 # One image: the API plus the built web app, served from the same origin.
-FROM node:24-bookworm-slim
+FROM node:25-bookworm-slim
 WORKDIR /app
 ENV CI=true
 RUN corepack enable
