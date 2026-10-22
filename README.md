@@ -5,7 +5,7 @@
 
 A full-stack TypeScript reference for the back office of a small distribution business: **inventory, stock movements and warehouse transfers, purchasing, employees and rewards**, behind role-based access. React and Express on PostgreSQL, one `docker compose up` to run it, browser tests that drive the real UI.
 
-Built and maintained by **DC TECH INC** as an engineering reference. It is a demo, not a product: every record in it is **synthetic** and it is not deployed anywhere.
+Built and maintained by **DCtech.** as an engineering reference. It is a demo, not a product: every record in it is **synthetic** and it is not deployed anywhere.
 
 ![Overview screen](docs/screenshots/02-overview.png)
 
