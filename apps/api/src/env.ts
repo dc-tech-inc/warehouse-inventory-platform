@@ -8,6 +8,9 @@ const EnvSchema = z.object({
   WEB_DIST: z.string().min(1).optional(),
   /** Defaults to true in production. Set to false only for plain-HTTP local runs (docker compose). */
   COOKIE_SECURE: z.enum(["true", "false"]).optional(),
+  /** Requests per 15 minutes per IP (global / login). Defaults 300 / 10; raise for automated browser tests. */
+  RATE_LIMIT_GLOBAL: z.coerce.number().int().min(1).optional(),
+  RATE_LIMIT_LOGIN: z.coerce.number().int().min(1).optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });

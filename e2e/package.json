@@ -1,0 +1,17 @@
+{
+  "name": "@app/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare-db": "tsx --conditions=@app/source --env-file-if-exists=../.env prepare-db.ts",
+    "test": "pnpm prepare-db && playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@app/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}
