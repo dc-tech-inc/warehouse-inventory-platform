@@ -3,9 +3,9 @@
 [![CI](https://github.com/dc-tech-inc/warehouse-inventory-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/dc-tech-inc/warehouse-inventory-platform/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A full-stack TypeScript reference for the back office of a small distribution business: **inventory, stock movements and warehouse transfers, purchasing, employees and rewards**, behind role-based access. React and Express on PostgreSQL, one `docker compose up` to run it, browser tests that drive the real UI.
+A full-stack TypeScript reference for the back office of a small distribution business: inventory, stock movements and warehouse transfers, purchasing, employees and rewards, behind role-based access. React and Express on PostgreSQL, one `docker compose up` to run it, browser tests that drive the real UI.
 
-Built and maintained by **DCtech.** as an engineering reference. It is a demo, not a product: every record in it is **synthetic** and it is not deployed anywhere.
+Built and maintained by DCtech. as an engineering reference. It is a demo, not a product: every record in it is **synthetic** and it is not deployed anywhere.
 
 ![Overview screen](docs/screenshots/02-overview.png)
 
@@ -141,9 +141,9 @@ The API integration tests and the e2e run need a PostgreSQL database whose name 
 
 Measured by CI (run [39801665217](https://github.com/dc-tech-inc/warehouse-inventory-platform/actions/runs/39801665217), against `postgres:17`):
 
-- **133 unit and integration tests** in 15 files: shared 35, api 78 (of which the Postgres integration tests run for real, none skipped), web 20 (jsdom).
-- **6 Playwright e2e tests** in Chromium against the built app.
-- Coverage of `apps/api/src` (v8): **92.3% lines, 90.7% statements, 81.1% branches, 94.5% functions**. The lowest-covered files are the process entrypoints (`server.ts`, `seed-cli.ts`, `bootstrap.ts`), which the tests do not start.
+- 133 unit and integration tests in 15 files: shared 35, api 78 (of which the Postgres integration tests run for real, none skipped), web 20 (jsdom).
+- 6 Playwright e2e tests in Chromium against the built app.
+- Coverage of `apps/api/src` (v8): 92.3% lines, 90.7% statements, 81.1% branches, 94.5% functions. The lowest-covered files are the process entrypoints (`server.ts`, `seed-cli.ts`, `bootstrap.ts`), which the tests do not start.
 - The `docker compose up` smoke job builds the image, waits for the health check, logs in as the manager and reads the dashboard.
 
 ## Design decisions
