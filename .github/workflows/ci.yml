@@ -4,11 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  GITLEAKS_VERSION: 8.30.1
+
 jobs:
+  # Fast checks on every push and pull request.
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -20,7 +25,7 @@ jobs:
           # Throwaway credentials for an ephemeral CI container.
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci
-          POSTGRES_DB: starter_test
+          POSTGRES_DB: warehouse_test
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -30,8 +35,7 @@ jobs:
           - 5432:5432
 
     env:
-      DATABASE_URL: postgres://ci:ci@localhost:5432/starter_test
-      GITLEAKS_VERSION: 8.30.1
+      DATABASE_URL: postgres://ci:ci@localhost:5432/warehouse_test
 
     steps:
       - uses: actions/checkout@v7
@@ -49,7 +53,18 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm db:migrate
-      - run: pnpm test:coverage
+      - name: Unit and integration tests with coverage
+        run: |
+          set -o pipefail
+          pnpm test:coverage | tee coverage.txt
+      - name: Coverage summary
+        run: |
+          {
+            echo '### Test coverage (apps/api/src, v8)'
+            echo '```'
+            grep -E "^(File|All files)" coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - run: pnpm build
 
       - name: Secret scan (gitleaks)
@@ -60,3 +75,94 @@ jobs:
           curl -sSfL "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt" | grep " $tarball\$" | sha256sum -c -
           tar -xzf "$tarball" gitleaks
           ./gitleaks git --redact --verbose .
+
+  # Browser end-to-end tests against the built app. Heavier, so pull requests and manual runs only.
+  e2e:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: warehouse_e2e
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgres://ci:ci@localhost:5432/warehouse_e2e
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Chromium
+        run: pnpm --filter @app/e2e exec playwright install --with-deps chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+      - name: Install Chromium system dependencies
+        run: pnpm --filter @app/e2e exec playwright install-deps chromium
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+
+      - run: pnpm --filter @app/e2e test
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-report
+          path: e2e/playwright-report/
+          retention-days: 14
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: screenshots
+          path: docs/screenshots/
+          retention-days: 14
+
+  # Proves `docker compose up` works from a clean checkout: build, migrate, seed, log in, read data.
+  compose-smoke:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and start
+        run: docker compose up -d --build --wait --wait-timeout 180
+      - name: Smoke test over HTTP
+        run: |
+          set -euo pipefail
+          curl -sSf http://localhost:3000/health
+          echo
+          curl -sSf -c jar -H 'Content-Type: application/json' \
+            -d '{"email":"manager@example.test","password":"demo-password-12345"}' \
+            http://localhost:3000/api/auth/login
+          echo
+          curl -sSf -b jar http://localhost:3000/api/dashboard | tee dashboard.json
+          echo
+          grep -q '"products":20' dashboard.json
+          curl -sSf http://localhost:3000/ | grep -q '<div id="root">'
+      - name: Logs
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop
+        if: always()
+        run: docker compose down -v

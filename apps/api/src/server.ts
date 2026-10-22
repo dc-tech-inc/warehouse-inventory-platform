@@ -11,7 +11,9 @@ const app = createApp({
   db,
   logger,
   webOrigin: env.WEB_ORIGIN,
-  secureCookies: env.NODE_ENV === "production",
+  secureCookies: env.COOKIE_SECURE ? env.COOKIE_SECURE === "true" : env.NODE_ENV === "production",
+  webDist: env.WEB_DIST,
+  rateLimits: { global: env.RATE_LIMIT_GLOBAL, credentials: env.RATE_LIMIT_LOGIN },
 });
 
 const server = app.listen(env.PORT, (err) => {

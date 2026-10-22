@@ -1,7 +1,7 @@
-import type { PublicUser } from "@app/shared";
+import { can, type Permission, type PublicUser } from "@app/shared";
 import type { RequestHandler, Response } from "express";
 import { SESSION_TTL_MS, type AuthService } from "../services/auth-service.js";
-import { unauthorized } from "./error-handler.js";
+import { forbidden, unauthorized } from "./error-handler.js";
 
 export const SESSION_COOKIE = "sid";
 
@@ -47,4 +47,15 @@ export function getAuth(res: Response): AuthLocals {
   const auth = res.locals.auth as AuthLocals | undefined;
   if (!auth) throw new Error("getAuth() called on a route without requireAuth");
   return auth;
+}
+
+/** requireAuth plus a role check: 401 without a session, 403 when the user's role lacks `permission`. */
+export function guard(auth: AuthService, permission: Permission): RequestHandler {
+  const authenticate = requireAuth(auth);
+  return async (req, res, next) => {
+    await authenticate(req, res, () => {});
+    if (res.headersSent) return;
+    if (!can(getAuth(res).user.role, permission)) throw forbidden();
+    next();
+  };
 }

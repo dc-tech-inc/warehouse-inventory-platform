@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import { sessions, users, type Database } from "@app/db";
-import type { PublicUser } from "@app/shared";
+import type { CreateUserInput, PublicUser, UpdateUserInput } from "@app/shared";
 import argon2 from "argon2";
-import { eq } from "drizzle-orm";
-import { AppError } from "../middleware/error-handler.js";
+import { asc, eq } from "drizzle-orm";
+import { AppError, notFound } from "../middleware/error-handler.js";
 
 // OWASP Password Storage Cheat Sheet minimum for argon2id.
 export const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 } as const;
@@ -19,6 +19,8 @@ export const isExpired = (expiresAt: Date, now = new Date()) => expiresAt.getTim
 
 const invalidCredentials = () => new AppError(401, "UNAUTHORIZED", "Invalid credentials");
 
+const publicColumns = { id: users.id, email: users.email, name: users.name, role: users.role };
+
 export interface Credentials {
   email: string;
   password: string;
@@ -33,14 +35,25 @@ export function createAuthService(db: Database) {
   dummyHash.catch(() => {}); // a failure surfaces on the login that awaits it, not as an unhandled rejection
 
   return {
-    async register({ email, password }: Credentials): Promise<PublicUser> {
+    /** Accounts are created by an admin (or the seed script); there is no public sign-up. */
+    async createUser({ email, name, password, role }: CreateUserInput & { email: string }): Promise<PublicUser> {
       const passwordHash = await hashPassword(password);
       const [user] = await db
         .insert(users)
-        .values({ email, passwordHash })
+        .values({ email, name, role, passwordHash })
         .onConflictDoNothing({ target: users.email })
-        .returning({ id: users.id, email: users.email });
+        .returning(publicColumns);
       if (!user) throw new AppError(409, "CONFLICT", "Email is already registered");
+      return user;
+    },
+
+    async listUsers(): Promise<PublicUser[]> {
+      return db.select(publicColumns).from(users).orderBy(asc(users.email));
+    },
+
+    async updateUser(id: string, patch: UpdateUserInput): Promise<PublicUser> {
+      const [user] = await db.update(users).set(patch).where(eq(users.id, id)).returning(publicColumns);
+      if (!user) throw notFound("User not found");
       return user;
     },
 
@@ -51,7 +64,7 @@ export function createAuthService(db: Database) {
         throw invalidCredentials();
       }
       if (!(await verifyPassword(user.passwordHash, password))) throw invalidCredentials();
-      return { id: user.id, email: user.email };
+      return { id: user.id, email: user.email, name: user.name, role: user.role };
     },
 
     async createSession(userId: string): Promise<{ token: string; expiresAt: Date }> {
@@ -65,7 +78,7 @@ export function createAuthService(db: Database) {
     async resolveSession(token: string): Promise<PublicUser | null> {
       const id = hashToken(token);
       const [row] = await db
-        .select({ userId: users.id, email: users.email, expiresAt: sessions.expiresAt })
+        .select({ ...publicColumns, expiresAt: sessions.expiresAt })
         .from(sessions)
         .innerJoin(users, eq(users.id, sessions.userId))
         .where(eq(sessions.id, id));
@@ -74,7 +87,7 @@ export function createAuthService(db: Database) {
         await db.delete(sessions).where(eq(sessions.id, id));
         return null;
       }
-      return { id: row.userId, email: row.email };
+      return { id: row.id, email: row.email, name: row.name, role: row.role };
     },
 
     async deleteSession(token: string): Promise<void> {

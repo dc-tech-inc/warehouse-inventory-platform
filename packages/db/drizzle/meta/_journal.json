@@ -8,6 +8,20 @@
       "when": 1792611089988,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792678516095,
+      "tag": "0001_drop_tasks_add_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792678516961,
+      "tag": "0002_warehouse_domain",
+      "breakpoints": true
     }
   ]
 }

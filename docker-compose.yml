@@ -1,21 +1,35 @@
-# Local development database only. Credentials are for local use; change them
-# in your own .env and here if the port is exposed beyond localhost.
+# `docker compose up` builds the app and starts it with a database on http://localhost:3000.
+# On first start it applies the migrations and loads SYNTHETIC demo data (see the README for the demo logins).
+# The credentials below are for local use only; do not expose these ports beyond localhost as they are.
 services:
   db:
     image: postgres:17
     environment:
-      POSTGRES_USER: starter
-      POSTGRES_PASSWORD: starter
-      POSTGRES_DB: starter
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: warehouse
+      POSTGRES_DB: warehouse
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U starter"]
+      test: ["CMD-SHELL", "pg_isready -U warehouse"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://warehouse:warehouse@db:5432/warehouse
+      WEB_ORIGIN: http://localhost:3000
+      # Plain HTTP on localhost: the session cookie cannot be Secure here. Set true behind HTTPS.
+      COOKIE_SECURE: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
 
 volumes:
   db-data:

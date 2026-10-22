@@ -1,158 +1,195 @@
-# ts-fullstack-starter
+# warehouse-inventory-platform
 
-A small full-stack TypeScript monorepo: a personal task list with accounts. React + Vite in front, Express 5 + PostgreSQL (Drizzle ORM) behind, one set of zod schemas shared by both.
+[![CI](https://github.com/dc-tech-inc/warehouse-inventory-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/dc-tech-inc/warehouse-inventory-platform/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## What it is
+A full-stack TypeScript reference for the back office of a small distribution business: **inventory, stock movements and warehouse transfers, purchasing, employees and rewards**, behind role-based access. React and Express on PostgreSQL, one `docker compose up` to run it, browser tests that drive the real UI.
 
-- **`apps/api`**: Express 5 REST API. Register, log in, log out, and create, list, update and delete your own tasks. zod validation on every input, a single JSON error envelope, request logging with pino, a `/health` endpoint that checks the database, and an OpenAPI 3.1 document at `/openapi.json`.
-- **`apps/web`**: React 18 single-page app (Vite). Login/register form and a task list with add, toggle, delete and an all/open/done filter. Talks to the API through a typed `fetch` client.
-- **`packages/db`**: Drizzle schema for `users`, `sessions` and `tasks`, the generated SQL migration, and a migration runner.
-- **`packages/shared`**: zod schemas and inferred types for every request and response. The API validates with them, the web client is typed by them, and the OpenAPI document is generated from them.
+Built and maintained by **DC TECH INC** as an engineering reference. It is a demo, not a product: every record in it is **synthetic** and it is not deployed anywhere.
 
-Out of scope on purpose: admin roles, email (verification, password reset), OAuth, teams or sharing, deployment.
+![Overview screen](docs/screenshots/02-overview.png)
 
-## Why it exists
+<sub>Screenshots in this repository are produced by the Playwright tests (`e2e/tests/tour.spec.ts`), not by hand.</sub>
 
-It is a reference for how I structure a typed full-stack service: a clear boundary between HTTP, services and the database, validation at the edge, sessions that can be revoked, ownership checks that do not leak whether a record exists, and tests that hit a real Postgres instead of mocks. It is a demo project, not a product, and it is not deployed anywhere.
+## What it does
+
+| Module | What you can do | Who (default roles) |
+|---|---|---|
+| **Inventory** | Products with SKU, unit, reorder point and cost; stock per warehouse; search, low-stock filter, pagination | everyone reads, managers write |
+| **Movements** | Book receipts and issues; managers book signed adjustments (note required); full history | clerk: receipt/issue, manager: + adjustment |
+| **Transfers** | Move stock between warehouses: it leaves the source immediately, lands on *receive*, returns on *cancel* | clerk and up |
+| **Purchasing** | Suppliers, purchase orders with lines; `draft → submitted → approved → received` (cancel until received); receiving books one receipt per line | clerk raises and receives, manager approves |
+| **Employees** | Employee records (synthetic) | manager and up |
+| **Rewards** | Points ledger: award, redeem against a catalog, recognition board | manager awards, admin manages the catalog |
+| **Accounts** | Admin creates accounts and changes roles. There is no public sign-up | admin |
+
+Rules the code enforces (and the tests check):
+
+- Stock never goes negative: an issue larger than what is on hand is a `409`, and ten concurrent issues for five units book exactly five.
+- Stock on hand always equals the sum of all movements, including transfers in transit.
+- You cannot approve a purchase order you created, not even as admin.
+- Redeeming points locks the employee row, so concurrent redemptions cannot spend the same points twice.
+- A role is read from the database on every request; promoting a user applies to their live session.
+
+## Run it
+
+```sh
+docker compose up
+```
+
+Open <http://localhost:3000>. The first start applies the migrations and loads synthetic demo data. Demo logins (password `demo-password-12345`, synthetic accounts on the reserved `example.test` domain):
+
+| Role | Email |
+|---|---|
+| admin | `admin@example.test` |
+| manager | `manager@example.test` |
+| clerk | `clerk@example.test` |
+
+Without Docker, with any PostgreSQL 17 you have (Node 24+, pnpm 11):
+
+```sh
+cp .env.example .env            # set DATABASE_URL
+pnpm install
+pnpm db:migrate
+pnpm db:seed                    # synthetic demo data, skipped if the database already has data
+pnpm dev                        # API :3000, web http://localhost:5173 (Vite proxies /api)
+```
 
 ## Architecture
 
 ```mermaid
 flowchart LR
   subgraph browser[Browser]
-    web["apps/web<br/>React 18 + Vite"]
+    web["apps/web<br/>React 18 + Vite<br/>hash routes, role-aware nav"]
   end
   subgraph server[Node 24]
     api["apps/api<br/>Express 5"]
-    svc["services<br/>auth, tasks"]
+    rbac["guard(permission)<br/>401 / 403"]
+    svc["services<br/>inventory · purchasing · people · auth"]
   end
-  db[("PostgreSQL<br/>users, sessions, tasks")]
-  shared["packages/shared<br/>zod schemas + types"]
+  db[("PostgreSQL 17<br/>CHECK constraints,<br/>transactions")]
+  shared["packages/shared<br/>zod schemas, RBAC map,<br/>PO state machine"]
   dbpkg["packages/db<br/>Drizzle schema + migrations"]
+  e2e["e2e<br/>Playwright"]
 
   web -- "fetch /api/*, sid cookie" --> api
-  api --> svc --> db
+  api --> rbac --> svc --> db
   shared -. types .-> web
-  shared -. validation + OpenAPI .-> api
+  shared -. validation + OpenAPI + permissions .-> api
   dbpkg -. schema, client .-> svc
+  e2e -- "drives the built app" --> web
 ```
 
-Request path inside the API: `pino-http` → `helmet` → `cors` → `express.json` (100 kB limit) → `/health` and `/openapi.json` → global rate limiter → routers (`/api/auth`, `/api/tasks`) → 404 → error handler.
-
-```
-apps/
-  api/   src/{app,server,env,logger,openapi}.ts, middleware/, routes/, services/; test/{unit,integration}
-  web/   src/{main,App}.tsx, api/client.ts, features/{auth,tasks}; test/
-packages/
-  db/      src/{schema,client,migrate}.ts, drizzle/ (SQL migrations)
-  shared/  src/{auth,task,error}.ts
-```
-
-## Run locally
-
-Requirements: Node 24+, pnpm 11 (the exact version is pinned in `packageManager`), and a PostgreSQL database.
-
-```sh
-docker compose up -d db               # postgres:17 on 127.0.0.1:5432, or use any Postgres you have
-cp .env.example .env                  # then set DATABASE_URL, e.g. postgres://starter:starter@localhost:5432/starter
-pnpm install
-pnpm db:migrate
-pnpm dev                              # API on :3000, web on http://localhost:5173 (Vite proxies /api to the API)
+```mermaid
+stateDiagram-v2
+  [*] --> draft
+  draft --> submitted: submit (clerk+)
+  submitted --> approved: approve (manager+, not the creator)
+  approved --> received: receive (clerk+) books stock
+  draft --> cancelled: cancel (manager+)
+  submitted --> cancelled
+  approved --> cancelled
+  received --> [*]
+  cancelled --> [*]
 ```
 
-Production-style run: `pnpm build`, then `pnpm --filter @app/api start` and serve `apps/web/dist` from any static host behind the same origin as the API.
-
-## Test
-
-```sh
-pnpm lint
-pnpm typecheck
-pnpm test             # all projects: shared, api, web
-pnpm test:coverage    # same, with v8 coverage of apps/api/src
+```
+apps/api/    src/{app,server,env,openapi,seed}.ts, middleware/, routes/, services/; test/{unit,integration}
+apps/web/    src/{App,hooks,ui,format}.ts(x), api/client.ts, features/*; test/
+packages/db/ src/schema.ts, drizzle/ (committed SQL migrations)
+packages/shared/  zod schemas, rbac.ts, purchasing.ts (state machine)
+e2e/         Playwright tests, DB reset + seed, screenshot tour
+docs/        adr/ (decisions), screenshots/ (generated)
 ```
 
-The API integration tests need a real database whose name contains `test` (the suite drops and recreates its schema, and refuses any other database). With the compose database:
-
-```sh
-docker compose exec db createdb -U starter starter_test
-DATABASE_URL=postgres://starter:starter@localhost:5432/starter_test pnpm test:coverage
-```
-
-Without `DATABASE_URL` the integration tests are skipped and the run prints why. CI always runs them against a `postgres:17` service container.
-
-What the tests cover (66 tests; numbers from the last local run on 2026-10-21):
-
-- **shared** (10): email normalization, password and title limits (including NUL characters), the `done` query filter, the error-code enum.
-- **api unit** (29, no database): argon2id parameters, token generation and hashing, expiry boundary, error envelope mapping (zod, body-parser, unknown errors never leak), database errors logged without their SQL parameters, env parsing, cookie parsing, `/health` returning 503 when the database is down, every route present in `/openapi.json`, security headers, CORS, global rate limit.
-- **api integration** (17, real Postgres): register → me → logout → session gone; login stores only the token hash; duplicate email 409 (case-insensitive); wrong password and unknown email return the same 401; expired session rejected and deleted; credential validation; `Secure` cookie flag; login rate limit returns 429 on the 11th attempt; task CRUD and filtering; **user B does not see user A's task in the list and gets 404 on update and delete**; input validation 400s; cascade delete.
-- **web** (10, jsdom): the API client (request shape, 204, typed `ApiError`, non-JSON errors) and the task list component (render, create, filter, toggle, delete, error display).
-
-Measured coverage of `apps/api/src` (`pnpm test:coverage` with Postgres): **91.5% lines, 91.4% statements, 92.1% branches, 90.9% functions**. The uncovered part is mostly `server.ts` (process entrypoint: listen and signal handling), which the tests do not start.
+Request path in the API: `pino-http` → `helmet` → `cors` → `express.json` (100 kB) → `/health` → global rate limiter → routers → static web app (when `WEB_DIST` is set) → 404 → error handler.
 
 ## API
 
-All bodies are JSON. Full schema: `GET /openapi.json` (OpenAPI 3.1, generated from `packages/shared`).
+OpenAPI 3.1 document at `GET /openapi.json`, generated from the same zod schemas the routes validate with. Highlights:
 
-| Method | Path | Auth | Success |
-|---|---|---|---|
-| GET | `/health` | no | 200 `{ status: "ok", db: "ok" }`, 503 `{ status: "unavailable", db: "down" }` |
-| GET | `/openapi.json` | no | 200 OpenAPI document |
-| POST | `/api/auth/register` | no | 201 `{ user }` + `sid` cookie; 409 if the email exists |
-| POST | `/api/auth/login` | no | 200 `{ user }` + `sid` cookie; 401 `Invalid credentials` |
-| POST | `/api/auth/logout` | yes | 204, session deleted, cookie cleared |
-| GET | `/api/auth/me` | yes | 200 `{ user }` |
-| GET | `/api/tasks?done=true\|false` | yes | 200 `{ tasks }`, newest first, your tasks only |
-| POST | `/api/tasks` | yes | 201 `{ task }` (title 1–200 chars, trimmed) |
-| PATCH | `/api/tasks/:id` | yes | 200 `{ task }`; 404 if missing or not yours |
-| DELETE | `/api/tasks/:id` | yes | 204; 404 if missing or not yours |
+| Area | Endpoints |
+|---|---|
+| Auth | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` |
+| Accounts (admin) | `GET/POST /api/users`, `PATCH /api/users/{id}` |
+| Inventory | `GET /api/dashboard`, `GET/POST /api/warehouses`, `GET/POST /api/products`, `GET/PATCH /api/products/{id}` |
+| Movements | `GET/POST /api/movements` (receipt, issue, adjustment) |
+| Transfers | `GET/POST /api/transfers`, `POST /api/transfers/{id}/receive`, `.../cancel` |
+| Purchasing | `GET/POST /api/suppliers`, `GET/POST /api/purchase-orders`, `GET /api/purchase-orders/{id}`, `POST .../{submit,approve,receive,cancel}` |
+| People | `GET/POST /api/employees`, `GET/PATCH /api/employees/{id}` |
+| Rewards | `GET/POST /api/rewards/catalog`, `GET /api/rewards/leaderboard`, `GET /api/employees/{id}/rewards`, `POST .../rewards/{award,redeem}` |
 
-Every error has the same shape:
+Lists are paginated (`?limit=1..100&offset=`) and return `{ items, total }`. Every error has one shape:
 
 ```json
-{ "error": { "code": "VALIDATION_ERROR", "message": "Request validation failed", "details": [{ "path": "title", "message": "..." }] } }
+{ "error": { "code": "CONFLICT", "message": "Insufficient stock", "details": { "available": 4, "requested": 5 } } }
 ```
 
-`code` is one of `VALIDATION_ERROR`, `UNAUTHORIZED`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, `INTERNAL`. A 500 always says `Internal server error`; the real error goes to the log only.
+`code` is one of `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, `INTERNAL`. A 500 always says `Internal server error`; the cause goes to the log only.
+
+## Tests
+
+```sh
+pnpm lint && pnpm typecheck
+pnpm test             # shared + api (unit and Postgres integration) + web (jsdom)
+pnpm test:coverage    # same, with v8 coverage of apps/api/src
+pnpm --filter @app/e2e exec playwright install chromium   # once
+pnpm --filter @app/e2e test                               # Playwright against the built app
+```
+
+The API integration tests and the e2e run need a PostgreSQL database whose name contains `test` (or `e2e`); they drop and recreate its schema and refuse any other name. Without `DATABASE_URL` the integration tests are skipped and the run prints why.
+
+Measured by CI (run [39801665217](https://github.com/dc-tech-inc/warehouse-inventory-platform/actions/runs/39801665217), against `postgres:17`):
+
+- **133 unit and integration tests** in 15 files: shared 35, api 78 (of which the Postgres integration tests run for real, none skipped), web 20 (jsdom).
+- **6 Playwright e2e tests** in Chromium against the built app.
+- Coverage of `apps/api/src` (v8): **92.3% lines, 90.7% statements, 81.1% branches, 94.5% functions**. The lowest-covered files are the process entrypoints (`server.ts`, `seed-cli.ts`, `bootstrap.ts`), which the tests do not start.
+- The `docker compose up` smoke job builds the image, waits for the health check, logs in as the manager and reads the dashboard.
 
 ## Design decisions
 
-- **Server-side sessions instead of JWT.** The cookie holds an opaque 32-byte random token; the database stores only its SHA-256. Logout and revocation are a row delete, there is no signing key to rotate, and a leaked `sessions` table cannot be replayed. For a same-site SPA talking to its own API, a stateless token buys nothing and makes logout harder. Cost: one indexed lookup per authenticated request. Sessions have a 24-hour absolute expiry; expired rows are rejected and deleted when presented.
-- **Cookie flags.** `HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=86400`, and `Secure` when `NODE_ENV=production`.
-- **argon2id with the OWASP minimum** (`m=19456 KiB, t=2, p=1`). Login with an unknown email still runs one argon2 verify against a dummy hash, so both failure paths do the same work and return the same message.
-- **One shared zod package.** Request validation, client types and the OpenAPI document come from the same schemas, so they cannot drift. The web app imports only types from it, so zod is not in the browser bundle.
-- **404, not 403, for other users' tasks.** Every task query is scoped by `user_id`, so a task you do not own is indistinguishable from one that does not exist.
-- **Plain Drizzle queries.** No repository layer or ORM relations magic: services call the query builder directly, and the SQL migration is generated and committed so it can be reviewed.
-- **Database clock for timestamps.** `created_at` and `updated_at` both come from Postgres `now()`. Setting `updated_at` from the Node clock instead was found to let it fall behind `created_at` when the app and database clocks disagree; this came up while writing the integration tests.
-- **Express 5 async errors.** Handlers are plain `async` functions; Express 5 forwards rejected promises to the error handler, so there is no wrapper library.
-- **`createApp(deps)` without `listen`.** Tests build the app with a real or stub database and drive it with supertest; `server.ts` only wires env, the pool and signal handling (SIGINT/SIGTERM close the HTTP server, then the pool).
-- **Rate limits.** 300 requests per 15 minutes per IP globally, 10 per 15 minutes on register and login. `/health` and `/openapi.json` are not limited.
+Short records live in [`docs/adr`](docs/adr):
+
+1. [Start from `ts-fullstack-starter`](docs/adr/0001-start-from-the-starter.md)
+2. [RBAC as a permission map in the shared package](docs/adr/0002-rbac-permission-map.md)
+3. [Stock changes are one transaction and a guarded UPDATE](docs/adr/0003-stock-changes-are-guarded-updates.md)
+4. [Purchase orders are a small state machine with separation of duties](docs/adr/0004-purchase-order-state-machine.md)
+5. [UI direction: a ledger, not a dashboard of cards](docs/adr/0005-ui-direction.md)
 
 ## Limitations
 
-- No email verification and no password reset.
-- Registration reveals whether an email already has an account (409 `Email is already registered`). Login does not, and both endpoints share the 10-per-15-minutes rate limit; hiding it fully would need email-based sign-up.
-- No CSRF token. Protection relies on `SameSite=Lax` cookies plus JSON-only endpoints; add a token if the API is ever served cross-site.
-- The rate limiter keeps counts in memory, per process. Several instances need a shared store. Behind a reverse proxy, set Express `trust proxy` correctly or every client shares the proxy's IP.
-- `helmet()` runs with its defaults. The API only serves JSON, so its Content-Security-Policy does not protect the web app; set CSP on whatever serves `apps/web/dist`.
-- Single session lifetime, no "remember me", no listing or revoking other sessions.
-- `docker-compose.yml` passed `docker compose config` but was not started on the machine this was built on (no local Docker; local tests ran against PostgreSQL 16, CI runs PostgreSQL 17).
-- Not deployed; there is no production configuration beyond `NODE_ENV=production`.
+- **Synthetic demo.** All products, suppliers, employees and accounts are invented. The employee and rewards modules model HR-style workflows, not real HR data, and have no payroll, leave or personal-data handling.
+- No email, password reset, SSO, MFA or audit-log export. Sessions are server-side with a 24-hour lifetime; there is no "remember me" or session list.
+- Single currency (USD), integer cents; no taxes, landed cost or supplier price lists.
+- Stock is tracked per product and warehouse; there are no bins/locations, lots, serial numbers or reservations.
+- A transfer in transit is not counted in either warehouse. Partial receipts of a purchase order are not supported (it is received whole or not at all).
+- No CSRF token: protection relies on `SameSite=Lax` cookies plus JSON-only endpoints. Add a token if the API is ever served cross-site.
+- The rate limiter is in memory, per process; several instances need a shared store.
+- Hash-based routing and no code splitting: fine for this size, not tuned for large catalogs. The web app has no offline mode.
+- Timestamps are shown in UTC.
+- The container is a single-stage image running as the `node` user with the full dependency tree; it is meant for evaluation, not for production hardening.
+
+## Roadmap
+
+Tracked as issues: partial purchase-order receipts, bin locations, an audit-trail view, CSV import/export.
 
 ## Docs used
 
 - Express 5 migration guide: https://expressjs.com/en/guide/migrating-5.html
-- Drizzle ORM, PostgreSQL: https://orm.drizzle.team/docs/get-started/postgresql-new · schema: https://orm.drizzle.team/docs/sql-schema-declaration · migrations: https://orm.drizzle.team/docs/migrations
-- zod 4: https://zod.dev/ · changelog: https://zod.dev/v4/changelog
-- zod-to-openapi: https://github.com/asteasolutions/zod-to-openapi
+- Drizzle ORM, PostgreSQL: https://orm.drizzle.team/docs/get-started/postgresql-new · schema: https://orm.drizzle.team/docs/sql-schema-declaration · migrations: https://orm.drizzle.team/docs/migrations · transactions: https://orm.drizzle.team/docs/transactions
+- PostgreSQL explicit locking (`SELECT … FOR UPDATE`): https://www.postgresql.org/docs/17/explicit-locking.html · check constraints: https://www.postgresql.org/docs/17/ddl-constraints.html
+- zod 4: https://zod.dev/ · zod-to-openapi: https://github.com/asteasolutions/zod-to-openapi
 - OWASP Password Storage Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
-- node-argon2: https://github.com/ranisalt/node-argon2
-- helmet: https://helmet.js.org/ · cors: https://github.com/expressjs/cors · express-rate-limit: https://express-rate-limit.mintlify.app/reference/configuration
-- pino-http: https://github.com/pinojs/pino-http
+- helmet: https://helmet.js.org/ · express-rate-limit: https://express-rate-limit.mintlify.app/reference/configuration
+- React 18: https://react.dev/ · Vite: https://vite.dev/guide/ · Testing Library: https://testing-library.com/docs/react-testing-library/intro/
 - Vitest coverage: https://vitest.dev/guide/coverage · supertest: https://github.com/forwardemail/supertest
-- pnpm workspaces: https://pnpm.io/workspaces · filtering: https://pnpm.io/filtering
-- GitHub Actions Postgres service containers: https://docs.github.com/en/actions/tutorials/use-containerized-services/create-postgresql-service-containers
+- Playwright web server: https://playwright.dev/docs/test-webserver · CI: https://playwright.dev/docs/ci · screenshots: https://playwright.dev/docs/screenshots
+- Docker Compose: https://docs.docker.com/compose/ · `up --wait`: https://docs.docker.com/reference/cli/docker/compose/up/ · Dockerfile reference: https://docs.docker.com/reference/dockerfile/
+- GitHub Actions service containers: https://docs.github.com/en/actions/tutorials/use-containerized-services/create-postgresql-service-containers
+- Dependabot configuration: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 - gitleaks: https://github.com/gitleaks/gitleaks
+- Mermaid: https://mermaid.js.org/syntax/stateDiagram.html
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). Copyright (c) 2026 DC TECH INC.

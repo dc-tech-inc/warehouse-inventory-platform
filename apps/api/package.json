@@ -7,6 +7,7 @@
     "dev": "tsx watch --conditions=@app/source --env-file-if-exists=../../.env src/server.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=../../.env dist/server.js",
+    "seed": "tsx --conditions=@app/source --env-file-if-exists=../../.env src/seed-cli.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

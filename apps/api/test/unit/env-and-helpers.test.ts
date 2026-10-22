@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { loadEnv } from "../../src/env.js";
 import { readCookie } from "../../src/middleware/auth.js";
-import { toTaskDto } from "../../src/services/task-service.js";
+import { escapeLike, lowStockFlag } from "../../src/services/inventory-service.js";
+import { formatPoNumber } from "../../src/services/purchasing-service.js";
 
 describe("loadEnv", () => {
   it("applies defaults", () => {
@@ -48,11 +49,21 @@ describe("readCookie", () => {
   });
 });
 
-describe("toTaskDto", () => {
-  it("serializes timestamps as ISO strings and drops userId", () => {
-    const created = new Date("2026-03-01T10:00:00Z");
-    expect(
-      toTaskDto({ id: "t1", userId: "u1", title: "x", done: true, createdAt: created, updatedAt: created }),
-    ).toEqual({ id: "t1", title: "x", done: true, createdAt: "2026-03-01T10:00:00.000Z", updatedAt: "2026-03-01T10:00:00.000Z" });
+describe("inventory helpers", () => {
+  it("flags low stock at or below a positive reorder point only", () => {
+    expect(lowStockFlag(5, 10)).toBe(true);
+    expect(lowStockFlag(10, 10)).toBe(true);
+    expect(lowStockFlag(11, 10)).toBe(false);
+    expect(lowStockFlag(0, 0)).toBe(false);
+  });
+
+  it("escapes LIKE wildcards so searches are literal", () => {
+    expect(escapeLike("50%_off\\")).toBe("50\\%\\_off\\\\");
+    expect(escapeLike("plain")).toBe("plain");
+  });
+
+  it("formats purchase order numbers", () => {
+    expect(formatPoNumber(7)).toBe("PO-000007");
+    expect(formatPoNumber(1234567)).toBe("PO-1234567");
   });
 });

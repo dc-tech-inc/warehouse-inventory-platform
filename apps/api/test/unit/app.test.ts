@@ -23,6 +23,7 @@ describe("createApp without a database", () => {
   it("serves an OpenAPI 3.1 document listing every route", async () => {
     const res = await request(appWith({})).get("/openapi.json").expect(200);
     expect(res.body.openapi).toBe("3.1.0");
+    expect(res.body.paths["/api/movements"].post.security).toEqual([{ sessionCookie: [] }]);
 
     const operations = Object.entries(res.body.paths as Record<string, object>).flatMap(([path, item]) =>
       Object.keys(item).map((method) => `${method.toUpperCase()} ${path}`),
@@ -30,19 +31,48 @@ describe("createApp without a database", () => {
     expect(operations.sort()).toEqual(
       [
         "GET /health",
-        "GET /openapi.json",
-        "POST /api/auth/register",
         "POST /api/auth/login",
         "POST /api/auth/logout",
         "GET /api/auth/me",
-        "GET /api/tasks",
-        "POST /api/tasks",
-        "PATCH /api/tasks/{id}",
-        "DELETE /api/tasks/{id}",
+        "GET /api/users",
+        "POST /api/users",
+        "PATCH /api/users/{id}",
+        "GET /api/dashboard",
+        "GET /api/warehouses",
+        "POST /api/warehouses",
+        "GET /api/products",
+        "GET /api/products/{id}",
+        "POST /api/products",
+        "PATCH /api/products/{id}",
+        "GET /api/movements",
+        "POST /api/movements",
+        "GET /api/transfers",
+        "POST /api/transfers",
+        "POST /api/transfers/{id}/receive",
+        "POST /api/transfers/{id}/cancel",
+        "GET /api/suppliers",
+        "POST /api/suppliers",
+        "GET /api/purchase-orders",
+        "GET /api/purchase-orders/{id}",
+        "POST /api/purchase-orders",
+        "POST /api/purchase-orders/{id}/submit",
+        "POST /api/purchase-orders/{id}/approve",
+        "POST /api/purchase-orders/{id}/receive",
+        "POST /api/purchase-orders/{id}/cancel",
+        "GET /api/employees",
+        "POST /api/employees",
+        "GET /api/employees/{id}",
+        "PATCH /api/employees/{id}",
+        "GET /api/rewards/catalog",
+        "POST /api/rewards/catalog",
+        "GET /api/rewards/leaderboard",
+        "GET /api/employees/{id}/rewards",
+        "POST /api/employees/{id}/rewards/award",
+        "POST /api/employees/{id}/rewards/redeem",
       ].sort(),
     );
     expect(Object.keys(res.body.components.schemas)).toEqual(
-      expect.arrayContaining(["Task", "Credentials", "ErrorResponse", "UserResponse"]),
+      expect.arrayContaining(["Product", "Movement", "PurchaseOrder", "Credentials", "ErrorResponse", "UserResponse"]),
     );
   });
 
@@ -52,8 +82,10 @@ describe("createApp without a database", () => {
   });
 
   it("rejects protected routes without a cookie before touching the database", async () => {
-    await request(appWith({})).get("/api/tasks").expect(401);
+    await request(appWith({})).get("/api/products").expect(401);
     await request(appWith({})).post("/api/auth/logout").expect(401);
+    await request(appWith({})).post("/api/movements").send({}).expect(401);
+    await request(appWith({})).get("/api/users").expect(401);
   });
 
   it("rejects malformed and oversized JSON bodies", async () => {
@@ -84,9 +116,9 @@ describe("createApp without a database", () => {
       secureCookies: false,
       rateLimits: { global: 2 },
     });
-    await request(app).get("/api/tasks").expect(401);
-    await request(app).get("/api/tasks").expect(401);
-    const res = await request(app).get("/api/tasks").expect(429);
+    await request(app).get("/api/products").expect(401);
+    await request(app).get("/api/products").expect(401);
+    const res = await request(app).get("/api/products").expect(429);
     expect(res.body.error.code).toBe("RATE_LIMITED");
   });
 });

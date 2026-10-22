@@ -1,4 +1,4 @@
-import { CreateTaskInput } from "@app/shared";
+import { CreateWarehouseInput } from "@app/shared";
 import { DrizzleQueryError } from "drizzle-orm";
 import express from "express";
 import { pino } from "pino";
@@ -22,12 +22,12 @@ describe("toErrorResponse", () => {
   });
 
   it("maps a ZodError to 400 with per-field details", () => {
-    const result = CreateTaskInput.safeParse({ title: "" });
+    const result = CreateWarehouseInput.safeParse({ code: "OK1", name: "", city: "X" });
     if (result.success) throw new Error("expected a validation failure");
     const { status, body } = toErrorResponse(result.error);
     expect(status).toBe(400);
     expect(body.error.code).toBe("VALIDATION_ERROR");
-    expect(body.error.details).toEqual([{ path: "title", message: expect.any(String) }]);
+    expect(body.error.details).toEqual([{ path: "name", message: expect.any(String) }]);
   });
 
   it("maps body-parser errors to 400/413", () => {

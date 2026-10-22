@@ -1,5 +1,7 @@
 import type { Database } from "@app/db";
 import cors from "cors";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import express, { type Express } from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
@@ -7,11 +9,15 @@ import { pinoHttp } from "pino-http";
 import type { Logger } from "./logger.js";
 import { AppError, errorHandler } from "./middleware/error-handler.js";
 import { buildOpenApiDocument } from "./openapi.js";
-import { authRouter } from "./routes/auth.js";
+import { authRouter, usersRouter } from "./routes/auth.js";
 import { healthRouter } from "./routes/health.js";
-import { tasksRouter } from "./routes/tasks.js";
+import { inventoryRouter } from "./routes/inventory.js";
+import { peopleRouter } from "./routes/people.js";
+import { purchasingRouter } from "./routes/purchasing.js";
 import { createAuthService } from "./services/auth-service.js";
-import { createTaskService } from "./services/task-service.js";
+import { createInventoryService } from "./services/inventory-service.js";
+import { createPeopleService } from "./services/people-service.js";
+import { createPurchasingService } from "./services/purchasing-service.js";
 
 export interface AppDeps {
   db: Database;
@@ -21,6 +27,8 @@ export interface AppDeps {
   secureCookies: boolean;
   /** Requests per 15-minute window per IP. */
   rateLimits?: { global?: number; credentials?: number };
+  /** Directory holding the built web app (apps/web/dist). When set, the API serves it too, on one origin. */
+  webDist?: string;
 }
 
 const WINDOW_MS = 15 * 60 * 1000;
@@ -37,7 +45,7 @@ function limiter(limit: number) {
 }
 
 /** Builds the Express app without listening, so tests can drive it with supertest. */
-export function createApp({ db, logger, webOrigin, secureCookies, rateLimits = {} }: AppDeps): Express {
+export function createApp({ db, logger, webOrigin, secureCookies, rateLimits = {}, webDist }: AppDeps): Express {
   const app = express();
   const auth = createAuthService(db);
   const openapi = buildOpenApiDocument();
@@ -58,7 +66,18 @@ export function createApp({ db, logger, webOrigin, secureCookies, rateLimits = {
     "/api/auth",
     authRouter({ auth, secureCookies, credentialLimiter: limiter(rateLimits.credentials ?? 10) }),
   );
-  app.use("/api/tasks", tasksRouter({ auth, tasks: createTaskService(db) }));
+  app.use("/api/users", usersRouter({ auth }));
+  app.use("/api", inventoryRouter({ auth, inventory: createInventoryService(db) }));
+  app.use("/api", purchasingRouter({ auth, purchasing: createPurchasingService(db) }));
+  app.use("/api", peopleRouter({ auth, people: createPeopleService(db) }));
+
+  if (webDist && existsSync(join(webDist, "index.html"))) {
+    app.use(express.static(webDist));
+    // Single-page app: any other GET outside /api falls back to index.html.
+    app.get(/^\/(?!api\/).*/, (_req, res) => {
+      res.sendFile(join(webDist, "index.html"));
+    });
+  }
 
   app.use((_req, _res, next) => next(new AppError(404, "NOT_FOUND", "Route not found")));
   app.use(errorHandler(logger));
