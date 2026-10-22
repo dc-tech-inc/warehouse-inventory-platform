@@ -1,4 +1,5 @@
 import { warehouses, type Database } from "@app/db";
+import type { ProductDetail, Supplier, Warehouse } from "@app/shared";
 import { count } from "drizzle-orm";
 import { createAuthService } from "./services/auth-service.js";
 import { createInventoryService } from "./services/inventory-service.js";
@@ -99,9 +100,9 @@ export async function seedDemoData(db: Database, password: string, log: (msg: st
   const [admin, manager, clerk] = accounts;
   if (!admin || !manager || !clerk) throw new Error("accounts not created");
 
-  const whs = [];
+  const whs: Warehouse[] = [];
   for (const w of WAREHOUSES) whs.push(await inventory.createWarehouse(w));
-  const prods = [];
+  const prods: ProductDetail[] = [];
   for (const [sku, name, unit, reorderPoint, unitCostCents] of PRODUCTS) {
     prods.push(await inventory.createProduct({ sku, name, unit, reorderPoint, unitCostCents }));
   }
@@ -136,7 +137,7 @@ export async function seedDemoData(db: Database, password: string, log: (msg: st
   }
 
   // Purchase orders in each workflow state.
-  const suppliers = [];
+  const suppliers: Supplier[] = [];
   for (const s of SUPPLIERS) suppliers.push(await purchasing.createSupplier(s));
   const poLines = (offset: number) =>
     prods.slice(offset, offset + 3).map((p) => ({ productId: p.id, quantity: 20 + rand(60), unitCostCents: p.unitCostCents }));
