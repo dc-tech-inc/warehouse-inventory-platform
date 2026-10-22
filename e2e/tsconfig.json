@@ -1,5 +1,5 @@
 {
   "extends": "../tsconfig.base.json",
-  "compilerOptions": { "noEmit": true, "declaration": false, "types": ["node"] },
-  "include": ["*.ts", "tests"]
+  "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler", "noEmit": true, "declaration": false, "types": ["node"] },
+  "include": ["playwright.config.ts", "constants.ts", "tests"]
 }
