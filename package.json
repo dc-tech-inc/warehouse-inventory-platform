@@ -1,5 +1,5 @@
 {
-  "name": "ts-fullstack-starter",
+  "name": "warehouse-inventory-platform",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "db:generate": "pnpm --filter @app/db generate",
-    "db:migrate": "pnpm --filter @app/db migrate"
+    "db:migrate": "pnpm --filter @app/db migrate",
+    "db:seed": "pnpm --filter @app/api seed"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
